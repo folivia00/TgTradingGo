@@ -2,13 +2,12 @@ package risk
 
 import (
 	"errors"
-
-	"github.com/yourname/tradebot/internal/core"
+	"tradebot/internal/core"
 )
 
 type model struct{ maxPerTrade float64 }
 
-func Default() core.RiskModel { return &model{maxPerTrade: 0.02} } // 2% по умолчанию
+func Default() core.RiskModel { return &model{maxPerTrade: 0.02} }
 
 func (m *model) Validate(sig core.Signal, acct core.AccountState, px float64) (core.Signal, error) {
 	if sig.SizePct <= 0 {
