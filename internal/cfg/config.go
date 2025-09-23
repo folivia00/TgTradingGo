@@ -1,39 +1,55 @@
 package cfg
 
 import (
-	"github.com/spf13/viper"
+	"os"
+	"strconv"
 )
 
 type Config struct {
 	TgToken     string
-	Mode        string // paper | live
+	Mode        string
 	Symbol      string
 	TF          string
 	LogLevel    string
 	PaperEquity float64
 	TradesPath  string
+
+	StatePath    string
+	Exchange     string
+	RestInterval string
+}
+
+func getenv(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+func getfloat(key string, def float64) float64 {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		return def
+	}
+	return f
 }
 
 func Load() Config {
-	v := viper.New()
-	v.SetConfigFile(".env")
-	_ = v.ReadInConfig()
-	v.AutomaticEnv()
-
-	v.SetDefault("MODE", "paper")
-	v.SetDefault("SYMBOL", "BTCUSDT")
-	v.SetDefault("TF", "1m")
-	v.SetDefault("LOG_LEVEL", "info")
-	v.SetDefault("PAPER_EQUITY", 10000.0)
-	v.SetDefault("TRADES_PATH", "trades.csv")
-
 	return Config{
-		TgToken:     v.GetString("TG_TOKEN"),
-		Mode:        v.GetString("MODE"),
-		Symbol:      v.GetString("SYMBOL"),
-		TF:          v.GetString("TF"),
-		LogLevel:    v.GetString("LOG_LEVEL"),
-		PaperEquity: v.GetFloat64("PAPER_EQUITY"),
-		TradesPath:  v.GetString("TRADES_PATH"),
+		TgToken:     getenv("TG_TOKEN", ""),
+		Mode:        getenv("MODE", "paper"),
+		Symbol:      getenv("SYMBOL", "BTCUSDT"),
+		TF:          getenv("TF", "1m"),
+		LogLevel:    getenv("LOG_LEVEL", "info"),
+		PaperEquity: getfloat("PAPER_EQUITY", 10000.0),
+		TradesPath:  getenv("TRADES_PATH", "trades.csv"),
+
+		StatePath:    getenv("STATE_PATH", "state.json"),
+		Exchange:     getenv("EXCHANGE", "binance"),
+		RestInterval: getenv("REST_INTERVAL", "3s"),
 	}
 }
