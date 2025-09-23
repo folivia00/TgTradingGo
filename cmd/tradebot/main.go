@@ -2,17 +2,20 @@ package main
 
 import (
 	"context"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/rs/zerolog/log"
 
-	"github.com/folivia00/TgTradingGo/internal/cfg"
-	"github.com/folivia00/TgTradingGo/internal/core"
-	"github.com/folivia00/TgTradingGo/internal/data"
-	"github.com/folivia00/TgTradingGo/internal/logx"
-	"github.com/folivia00/TgTradingGo/internal/risk"
-	"github.com/folivia00/TgTradingGo/internal/strategies"
-	"github.com/folivia00/TgTradingGo/internal/tg"
+	"tradebot/internal/cfg"
+	"tradebot/internal/core"
+	"tradebot/internal/data"
+	"tradebot/internal/logx"
+	"tradebot/internal/risk"
+	"tradebot/internal/strategies"
+	"tradebot/internal/tg"
 )
 
 func main() {
@@ -26,13 +29,14 @@ func main() {
 	// Strategy
 	strat := strategies.NewEmaAtr(9, 21, 14, 1.5)
 
-	// Engine (paper mode only in this starter)
+	// Engine (paper demo)
 	eng := core.NewEngine(core.EngineOpts{
 		Mode:       c.Mode,
 		EqUSD:      c.PaperEquity,
 		Risk:       risk.Default(),
 		NotifyFunc: func(msg string) { log.Info().Msg(msg) },
 	})
+	eng.AttachStrategy(strat)
 
 	// Telegram bot
 	bot := tg.NewBot(c.TgToken, eng)
@@ -44,4 +48,20 @@ func main() {
 
 	// Data feed: random 1m candles for demo
 	feed := data.NewRandomFeed(c.Symbol, c.TF, time.Now().Add(-time.Hour), 64000, 0.002)
+	go func() {
+		for k := range feed.Candles {
+			if err := eng.OnCandle(k.Symbol, k.TF, k); err != nil {
+				log.Error().Err(err).Msg("engine OnCandle")
+			}
+		}
+	}()
+	feed.Start(ctx)
+
+	// Graceful shutdown
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
+	<-sigs
+	log.Info().Msg("shutdown")
+	cancel()
+	time.Sleep(300 * time.Millisecond)
 }
