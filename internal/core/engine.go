@@ -36,6 +36,7 @@ func NewEngine(opts EngineOpts) *Engine {
 }
 
 func (e *Engine) AttachStrategy(s Strategy) { e.strat = s }
+func (e *Engine) Strategy() Strategy        { return e.strat }
 func (e *Engine) EquityUSD() float64        { return e.eqUSD }
 func (e *Engine) Snapshot() AccountState    { return e.snapshot(e.lastPx) }
 
