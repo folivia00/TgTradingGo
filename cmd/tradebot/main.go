@@ -2,73 +2,126 @@ package main
 
 import (
 	"context"
+	"log"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
-
-	"github.com/rs/zerolog/log"
 
 	"tradebot/internal/cfg"
 	"tradebot/internal/core"
 	"tradebot/internal/data"
 	"tradebot/internal/logx"
 	"tradebot/internal/risk"
+	"tradebot/internal/state"
 	"tradebot/internal/strategies"
 	"tradebot/internal/tg"
 )
 
 func main() {
-	c := cfg.Load()
-	logx.Setup(c.LogLevel)
-	log.Info().Str("mode", c.Mode).Msg("tradebot starting")
+	config := cfg.Load()
+	logx.Setup(config.LogLevel)
+	log.Printf("tradebot starting | mode=%s", config.Mode)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// CSV trade log
-	tl, err := data.NewTradeLog(c.TradesPath)
+	tradeLog, err := data.NewTradeLog(config.TradesPath)
 	if err != nil {
-		log.Fatal().Err(err).Msg("trade log init")
+		log.Fatalf("trade log init: %v", err)
 	}
 
-	// Strategy
-	strat := strategies.NewEmaAtr(9, 21, 14, 1.5)
+	store := state.New(config.StatePath)
+	savedState, err := store.Load()
+	if err != nil {
+		log.Printf("state load failed: %v", err)
+	}
 
-	// Engine (paper demo)
-	eng := core.NewEngine(core.EngineOpts{
-		Mode:       c.Mode,
-		EqUSD:      c.PaperEquity,
+	var strat core.Strategy = strategies.NewEmaAtr(9, 21, 14, 1.5)
+	switch savedState.Strategy.Type {
+	case "ema":
+		if len(savedState.Strategy.I) >= 3 && len(savedState.Strategy.F) >= 1 {
+			strat = strategies.NewEmaAtr(savedState.Strategy.I[0], savedState.Strategy.I[1], savedState.Strategy.I[2], savedState.Strategy.F[0])
+		}
+	case "rsi":
+		if len(savedState.Strategy.I) >= 1 && len(savedState.Strategy.F) >= 3 {
+			strat = strategies.NewRSI(savedState.Strategy.I[0], savedState.Strategy.F[0], savedState.Strategy.F[1], savedState.Strategy.F[2])
+		}
+	}
+
+	engine := core.NewEngine(core.EngineOpts{
+		Mode:       config.Mode,
+		EqUSD:      config.PaperEquity,
 		Risk:       risk.Default(),
-		NotifyFunc: func(msg string) { log.Info().Msg(msg) },
-		Trades:     tl,
+		NotifyFunc: func(msg string) { log.Printf("%s", msg) },
+		Trades:     tradeLog,
 	})
-	eng.AttachStrategy(strat)
+	engine.AttachStrategy(strat)
 
-	// Telegram bot
-	bot := tg.NewBot(c.TgToken, eng, tl)
-	go func() {
-		if err := bot.Run(ctx); err != nil {
-			log.Error().Err(err).Msg("telegram bot stopped")
-		}
-	}()
+	feedType := "random"
+	if savedState.Feed.Type != "" {
+		feedType = savedState.Feed.Type
+	}
 
-	// Data feed: random 1m candles for demo
-	feed := data.NewRandomFeed(c.Symbol, c.TF, time.Now().Add(-time.Hour), 64000, 0.002)
-	go func() {
-		for k := range feed.Candles {
-			if err := eng.OnCandle(k.Symbol, k.TF, k); err != nil {
-				log.Error().Err(err).Msg("engine OnCandle")
+	bot := tg.NewBot(config.TgToken, engine, tradeLog, store, config.Symbol, config.TF, feedType)
+
+	startFeed := func(ftype string) context.CancelFunc {
+		ctxFeed, cancelFeed := context.WithCancel(ctx)
+		switch ftype {
+		case "rest":
+			interval, err := time.ParseDuration(config.RestInterval)
+			if err != nil || interval <= 0 {
+				interval = 3 * time.Second
 			}
+			feed := data.NewRestFeed(config.Symbol, config.TF, interval)
+			go func() {
+				for k := range feed.Candles {
+					if err := engine.OnCandle(k.Symbol, k.TF, k); err != nil {
+						log.Printf("engine OnCandle: %v", err)
+					}
+				}
+			}()
+			feed.Start(ctxFeed)
+		default:
+			feed := data.NewRandomFeed(config.Symbol, config.TF, time.Now().Add(-time.Hour), 64000, 0.002)
+			go func() {
+				for k := range feed.Candles {
+					if err := engine.OnCandle(k.Symbol, k.TF, k); err != nil {
+						log.Printf("engine OnCandle: %v", err)
+					}
+				}
+			}()
+			feed.Start(ctxFeed)
+		}
+		return cancelFeed
+	}
+
+	var feedMu sync.Mutex
+	cancelFeed := startFeed(feedType)
+
+	go func() {
+		if err := bot.Run(ctx, func(newFeed string) {
+			feedMu.Lock()
+			if cancelFeed != nil {
+				cancelFeed()
+			}
+			cancelFeed = startFeed(newFeed)
+			feedMu.Unlock()
+		}); err != nil {
+			log.Printf("telegram bot stopped: %v", err)
 		}
 	}()
-	feed.Start(ctx)
 
-	// Graceful shutdown
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
 	<-sigs
-	log.Info().Msg("shutdown")
+	log.Printf("shutdown")
 	cancel()
+	feedMu.Lock()
+	if cancelFeed != nil {
+		cancelFeed()
+	}
+	feedMu.Unlock()
 	time.Sleep(300 * time.Millisecond)
 }
