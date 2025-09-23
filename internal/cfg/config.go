@@ -11,6 +11,7 @@ type Config struct {
 	TF          string
 	LogLevel    string
 	PaperEquity float64
+	TradesPath  string
 }
 
 func Load() Config {
@@ -24,6 +25,7 @@ func Load() Config {
 	v.SetDefault("TF", "1m")
 	v.SetDefault("LOG_LEVEL", "info")
 	v.SetDefault("PAPER_EQUITY", 10000.0)
+	v.SetDefault("TRADES_PATH", "trades.csv")
 
 	return Config{
 		TgToken:     v.GetString("TG_TOKEN"),
@@ -32,5 +34,6 @@ func Load() Config {
 		TF:          v.GetString("TF"),
 		LogLevel:    v.GetString("LOG_LEVEL"),
 		PaperEquity: v.GetFloat64("PAPER_EQUITY"),
+		TradesPath:  v.GetString("TRADES_PATH"),
 	}
 }

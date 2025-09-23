@@ -26,6 +26,12 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// CSV trade log
+	tl, err := data.NewTradeLog(c.TradesPath)
+	if err != nil {
+		log.Fatal().Err(err).Msg("trade log init")
+	}
+
 	// Strategy
 	strat := strategies.NewEmaAtr(9, 21, 14, 1.5)
 
@@ -35,11 +41,12 @@ func main() {
 		EqUSD:      c.PaperEquity,
 		Risk:       risk.Default(),
 		NotifyFunc: func(msg string) { log.Info().Msg(msg) },
+		Trades:     tl,
 	})
 	eng.AttachStrategy(strat)
 
 	// Telegram bot
-	bot := tg.NewBot(c.TgToken, eng)
+	bot := tg.NewBot(c.TgToken, eng, tl)
 	go func() {
 		if err := bot.Run(ctx); err != nil {
 			log.Error().Err(err).Msg("telegram bot stopped")
