@@ -7,12 +7,12 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/folivia00/TgTradingGo/internal/cfg"
-	"github.com/folivia00/TgTradingGointernal/core"
-	"github.com/folivia00/TgTradingGointernal/data"
-	"github.com/folivia00/TgTradingGointernal/logx"
-	"github.com/folivia00/TgTradingGointernal/risk"
-	"github.com/folivia00/TgTradingGointernal/strategies"
-	"github.com/folivia00/TgTradingGointernal/tg"
+	"github.com/folivia00/TgTradingGo/internal/core"
+	"github.com/folivia00/TgTradingGo/internal/data"
+	"github.com/folivia00/TgTradingGo/internal/logx"
+	"github.com/folivia00/TgTradingGo/internal/risk"
+	"github.com/folivia00/TgTradingGo/internal/strategies"
+	"github.com/folivia00/TgTradingGo/internal/tg"
 )
 
 func main() {
