@@ -54,6 +54,8 @@ func (s *Server) Serve() error {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 	})
+	// history
+	mux.HandleFunc("/api/history", s.handleHistory)
 	// SSE
 	mux.HandleFunc("/sse", func(w http.ResponseWriter, r *http.Request) {
 		s.hub.Subscribe(w, r)
