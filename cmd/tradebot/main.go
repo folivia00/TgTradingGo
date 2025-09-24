@@ -17,6 +17,7 @@ import (
 	"tradebot/internal/state"
 	"tradebot/internal/strategies"
 	"tradebot/internal/tg"
+	"tradebot/internal/web"
 )
 
 func main() {
@@ -58,6 +59,23 @@ func main() {
 		Trades:     tradeLog,
 	})
 	engine.AttachStrategy(strat)
+
+	// W1: стартуем Web сервер (dev mode допускает отсутствие initData)
+	wsrv := func() *web.Server {
+		dev := true     // на локалке можно оставить true; в проде — читать из ENV DEV_MODE=false
+		addr := ":8080" // или из ENV WEB_ADDR
+		srv := web.NewServer(config.TgToken, addr, dev)
+		go func() {
+			if err := srv.Serve(); err != nil {
+				log.Printf("web server stopped: %v", err)
+			}
+		}()
+		return srv
+	}()
+	defer wsrv.Stop()
+
+	// TODO(W2): публиковать реальные события в SSE
+	// пример: при получении свечи из feed — сериализовать в JSON и wsrv.PublishJSON(...)
 
 	feedType := "random"
 	if savedState.Feed.Type != "" {
