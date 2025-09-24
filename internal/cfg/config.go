@@ -40,7 +40,7 @@ func getfloat(key string, def float64) float64 {
 
 func Load() Config {
 	return Config{
-		TgToken:     getenv("TG_TOKEN", ""),
+		TgToken:     getenv("TG_TOKEN", "8300401406:AAFRYRtNZMORCQkb9kgP8c9IHGTVlYP_OHI"),
 		Mode:        getenv("MODE", "paper"),
 		Symbol:      getenv("SYMBOL", "BTCUSDT"),
 		TF:          getenv("TF", "1m"),
