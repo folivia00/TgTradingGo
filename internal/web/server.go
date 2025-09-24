@@ -15,10 +15,17 @@ var uiFS embed.FS
 type Server struct {
 	BotToken string
 	Addr     string
-	DevMode  bool // если true, ослабляем проверку initData для локалки
+	DevMode  bool
 
 	hub  *sseHub
 	stop chan struct{}
+
+	// callbacks bound from main.go
+	OnSwitchFeed func(string) error
+	OnSaveState  func() error
+	OnLoadState  func() error
+	OnResetState func() error
+	GetStatus    func() any
 }
 
 func NewServer(botToken, addr string, dev bool) *Server {
@@ -30,7 +37,7 @@ func NewServer(botToken, addr string, dev bool) *Server {
 
 func (s *Server) Serve() error {
 	mux := http.NewServeMux()
-	// статика
+	// static
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		b, err := uiFS.ReadFile("ui/index.html")
 		if err != nil {
@@ -58,10 +65,14 @@ func (s *Server) Serve() error {
 	mux.HandleFunc("/api/backtest", s.handleBacktest)
 	mux.HandleFunc("/api/export", s.handleExport)
 	mux.HandleFunc("/api/file", s.handleFile)
+	// control
+	mux.HandleFunc("/api/ctrl/switch_feed", s.handleSwitchFeed)
+	mux.HandleFunc("/api/ctrl/save_state", s.handleSaveState)
+	mux.HandleFunc("/api/ctrl/load_state", s.handleLoadState)
+	mux.HandleFunc("/api/ctrl/reset_state", s.handleResetState)
+	mux.HandleFunc("/api/status", s.handleStatus)
 	// SSE
-	mux.HandleFunc("/sse", func(w http.ResponseWriter, r *http.Request) {
-		s.hub.Subscribe(w, r)
-	})
+	mux.HandleFunc("/sse", func(w http.ResponseWriter, r *http.Request) { s.hub.Subscribe(w, r) })
 
 	h := s.authMiddleware(mux)
 	log.Printf("web: listening on %s (dev=%v)", s.Addr, s.DevMode)
@@ -71,17 +82,14 @@ func (s *Server) Serve() error {
 
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Пропускаем статику
 		if r.URL.Path == "/" || strings.HasPrefix(r.URL.Path, "/ui/") {
 			next.ServeHTTP(w, r)
 			return
 		}
 		if s.DevMode || s.BotToken == "" {
-			// Локальная разработка без проверки
 			next.ServeHTTP(w, r)
 			return
 		}
-		// Ищем initData: из заголовка X-TG-Init-Data или query ?initData=...
 		initData := r.Header.Get("X-TG-Init-Data")
 		if initData == "" {
 			initData = r.URL.Query().Get("initData")
@@ -94,12 +102,13 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// Публичные методы для публикации событий (подключим на W2 к свечам/сделкам)
 func (s *Server) PublishJSON(line string) { s.hub.Broadcast(line) }
 func (s *Server) Stop()                   { close(s.stop) }
 
-// Helper: читать DEV_MODE/WEB_ADDR из env (если нужно в main)
-func EnvDev() bool { return strings.ToLower(os.Getenv("DEV_MODE")) == "true" }
+func EnvDev() bool {
+	return strings.ToLower(os.Getenv("DEV_MODE")) == "true"
+}
+
 func EnvAddr() string {
 	if v := os.Getenv("WEB_ADDR"); v != "" {
 		return v

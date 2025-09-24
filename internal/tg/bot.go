@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"tradebot/internal/core"
@@ -28,10 +29,13 @@ type Bot struct {
 	feedType   string
 	strategy   state.StrategyState
 	switchFeed func(string)
+
+	mu sync.RWMutex
 }
 
 func NewBot(token string, eng *core.Engine, tl core.TradeLogger, store *state.Store, symbol, tf, feedType string) *Bot {
-	b := &Bot{token: token, eng: eng, tl: tl, store: store, symbol: symbol, tf: tf, feedType: feedType}
+	b := &Bot{token: token, eng: eng, tl: tl, store: store, symbol: symbol, tf: tf}
+	b.SetFeedType(feedType)
 	b.captureStrategy(eng.Strategy())
 	return b
 }
@@ -142,8 +146,8 @@ func (b *Bot) Run(ctx context.Context, onSwitchFeed func(newFeed string)) error 
 						b.send(chatID, "Только rest|random")
 						break
 					}
-					if ft != b.feedType {
-						b.feedType = ft
+					if prev := b.FeedType(); ft != prev {
+						b.SetFeedType(ft)
 						if b.switchFeed != nil {
 							b.switchFeed(ft)
 						}
@@ -155,6 +159,18 @@ func (b *Bot) Run(ctx context.Context, onSwitchFeed func(newFeed string)) error 
 			}
 		}
 	}
+}
+
+func (b *Bot) SetFeedType(ft string) {
+	b.mu.Lock()
+	b.feedType = ft
+	b.mu.Unlock()
+}
+
+func (b *Bot) FeedType() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.feedType
 }
 
 func (b *Bot) handleSetStrategy(chatID int64, text string) {
@@ -207,7 +223,7 @@ func (b *Bot) saveState() error {
 	st := state.State{
 		Strategy: b.strategy,
 		Feed: state.FeedState{
-			Type:   b.feedType,
+			Type:   b.FeedType(),
 			Symbol: b.symbol,
 			TF:     b.tf,
 		},
@@ -228,17 +244,17 @@ func (b *Bot) loadState() error {
 			return err
 		}
 	}
-	prevFeed := b.feedType
+	prevFeed := b.FeedType()
 	if st.Feed.Type == "rest" || st.Feed.Type == "random" {
-		b.feedType = st.Feed.Type
+		b.SetFeedType(st.Feed.Type)
 		if st.Feed.Symbol != "" {
 			b.symbol = st.Feed.Symbol
 		}
 		if st.Feed.TF != "" {
 			b.tf = st.Feed.TF
 		}
-		if b.switchFeed != nil && prevFeed != b.feedType {
-			b.switchFeed(b.feedType)
+		if b.switchFeed != nil && prevFeed != st.Feed.Type {
+			b.switchFeed(st.Feed.Type)
 		}
 	}
 	return nil
@@ -362,7 +378,7 @@ func (b *Bot) send(chatID int64, text string) {
 
 func (b *Bot) status() string {
 	s := b.eng.Snapshot()
-	return fmt.Sprintf("Mode: paper\nFeed: %s\nEquity: %.2f USD\nPos: %s qty=%.4f entry=%.2f unrl=%.2f", b.feedType, s.EquityUSD, actName(s.Position.Side), s.Position.Qty, s.Position.Entry, s.Position.Unreal)
+	return fmt.Sprintf("Mode: paper\nFeed: %s\nEquity: %.2f USD\nPos: %s qty=%.4f entry=%.2f unrl=%.2f", b.FeedType(), s.EquityUSD, actName(s.Position.Side), s.Position.Qty, s.Position.Entry, s.Position.Unreal)
 }
 
 func (b *Bot) equity() string {

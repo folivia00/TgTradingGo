@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -73,16 +74,33 @@ func main() {
 	})
 	eng.AttachStrategy(strat)
 
-	go func() {
-		if err := wsrv.Serve(); err != nil {
-			log.Printf("web server stopped: %v", err)
-		}
-	}()
-
 	feedType := "random"
 	if st.Feed.Type != "" {
 		feedType = st.Feed.Type
 	}
+
+	var feedMu sync.Mutex
+	curFeed := feedType
+
+	wsrv.GetStatus = func() any {
+		feedMu.Lock()
+		feed := curFeed
+		feedMu.Unlock()
+		snap := eng.Snapshot()
+		return map[string]any{
+			"mode":   c.Mode,
+			"symbol": c.Symbol,
+			"tf":     c.TF,
+			"feed":   feed,
+			"equity": snap.EquityUSD,
+		}
+	}
+
+	var (
+		stMu       sync.Mutex
+		cancelFeed context.CancelFunc
+		bot        *tg.Bot
+	)
 
 	startFeed := func(ftype string) context.CancelFunc {
 		ctxFeed, cancelFeed := context.WithCancel(ctx)
@@ -143,19 +161,88 @@ func main() {
 		return cancelFeed
 	}
 
-	var feedMu sync.Mutex
-	cancelFeed := startFeed(feedType)
+	changeFeed := func(newFeed string, persist bool) error {
+		if newFeed != "random" && newFeed != "rest" {
+			return fmt.Errorf("bad feed")
+		}
 
-	bot := tg.NewBot(c.TgToken, eng, tl, store, c.Symbol, c.TF, feedType)
-
-	go func() {
-		if err := bot.Run(ctx, func(newFeed string) {
+		if newFeed != curFeed {
 			feedMu.Lock()
 			if cancelFeed != nil {
 				cancelFeed()
 			}
 			cancelFeed = startFeed(newFeed)
+			curFeed = newFeed
 			feedMu.Unlock()
+		}
+
+		if bot != nil {
+			bot.SetFeedType(newFeed)
+		}
+
+		stMu.Lock()
+		st.Feed.Type = newFeed
+		var err error
+		if persist {
+			err = store.Save(st)
+		}
+		stMu.Unlock()
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+
+	wsrv.OnSwitchFeed = func(newFeed string) error { return changeFeed(newFeed, true) }
+	wsrv.OnSaveState = func() error {
+		stMu.Lock()
+		defer stMu.Unlock()
+		return store.Save(st)
+	}
+	wsrv.OnLoadState = func() error {
+		ns, err := store.Load()
+		if err != nil {
+			return err
+		}
+		stMu.Lock()
+		st = ns
+		stMu.Unlock()
+		if ns.Feed.Type != "" {
+			if err := changeFeed(ns.Feed.Type, false); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	wsrv.OnResetState = func() error {
+		ns := state.Default()
+		if ns.Feed.Type != "" {
+			if err := changeFeed(ns.Feed.Type, false); err != nil {
+				return err
+			}
+		}
+		stMu.Lock()
+		st = ns
+		err := store.Save(st)
+		stMu.Unlock()
+		return err
+	}
+
+	cancelFeed = startFeed(feedType)
+
+	go func() {
+		if err := wsrv.Serve(); err != nil {
+			log.Printf("web server stopped: %v", err)
+		}
+	}()
+
+	bot = tg.NewBot(c.TgToken, eng, tl, store, c.Symbol, c.TF, feedType)
+
+	go func() {
+		if err := bot.Run(ctx, func(newFeed string) {
+			if err := changeFeed(newFeed, true); err != nil {
+				log.Printf("switch feed: %v", err)
+			}
 		}); err != nil {
 			log.Printf("telegram bot stopped: %v", err)
 		}
