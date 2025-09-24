@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"os"
 	"os/signal"
@@ -21,91 +22,118 @@ import (
 )
 
 func main() {
-	config := cfg.Load()
-	logx.Setup(config.LogLevel)
-	log.Printf("tradebot starting | mode=%s", config.Mode)
+	c := cfg.Load()
+	logx.Setup(c.LogLevel)
+	log.Printf("tradebot starting | mode=%s", c.Mode)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	tradeLog, err := data.NewTradeLog(config.TradesPath)
+	tl, err := data.NewTradeLog(c.TradesPath)
 	if err != nil {
 		log.Fatalf("trade log init: %v", err)
 	}
 
-	store := state.New(config.StatePath)
-	savedState, err := store.Load()
+	store := state.New(c.StatePath)
+	st, err := store.Load()
 	if err != nil {
 		log.Printf("state load failed: %v", err)
 	}
 
 	var strat core.Strategy = strategies.NewEmaAtr(9, 21, 14, 1.5)
-	switch savedState.Strategy.Type {
+	switch st.Strategy.Type {
 	case "ema":
-		if len(savedState.Strategy.I) >= 3 && len(savedState.Strategy.F) >= 1 {
-			strat = strategies.NewEmaAtr(savedState.Strategy.I[0], savedState.Strategy.I[1], savedState.Strategy.I[2], savedState.Strategy.F[0])
+		if len(st.Strategy.I) >= 3 && len(st.Strategy.F) >= 1 {
+			strat = strategies.NewEmaAtr(st.Strategy.I[0], st.Strategy.I[1], st.Strategy.I[2], st.Strategy.F[0])
 		}
 	case "rsi":
-		if len(savedState.Strategy.I) >= 1 && len(savedState.Strategy.F) >= 3 {
-			strat = strategies.NewRSI(savedState.Strategy.I[0], savedState.Strategy.F[0], savedState.Strategy.F[1], savedState.Strategy.F[2])
+		if len(st.Strategy.I) >= 1 && len(st.Strategy.F) >= 3 {
+			strat = strategies.NewRSI(st.Strategy.I[0], st.Strategy.F[0], st.Strategy.F[1], st.Strategy.F[2])
 		}
 	}
 
-	engine := core.NewEngine(core.EngineOpts{
-		Mode:       config.Mode,
-		EqUSD:      config.PaperEquity,
-		Risk:       risk.Default(),
-		NotifyFunc: func(msg string) { log.Printf("%s", msg) },
-		Trades:     tradeLog,
-	})
-	engine.AttachStrategy(strat)
+	wsrv := web.NewServer(c.TgToken, web.EnvAddr(), web.EnvDev())
 
-	// W1: стартуем Web сервер (dev mode допускает отсутствие initData)
-	wsrv := func() *web.Server {
-		dev := true     // на локалке можно оставить true; в проде — читать из ENV DEV_MODE=false
-		addr := ":8080" // или из ENV WEB_ADDR
-		srv := web.NewServer(config.TgToken, addr, dev)
-		go func() {
-			if err := srv.Serve(); err != nil {
-				log.Printf("web server stopped: %v", err)
+	eng := core.NewEngine(core.EngineOpts{
+		Mode:  c.Mode,
+		EqUSD: c.PaperEquity,
+		Risk:  risk.Default(),
+		NotifyFunc: func(msg string) {
+			log.Printf("%s", msg)
+			if line, err := json.Marshal(map[string]any{
+				"type": "trade",
+				"data": map[string]any{"msg": msg},
+			}); err == nil {
+				wsrv.PublishJSON(string(line))
+			} else {
+				log.Printf("notify marshal: %v", err)
 			}
-		}()
-		return srv
-	}()
-	defer wsrv.Stop()
+		},
+		Trades: tl,
+	})
+	eng.AttachStrategy(strat)
 
-	// TODO(W2): публиковать реальные события в SSE
-	// пример: при получении свечи из feed — сериализовать в JSON и wsrv.PublishJSON(...)
+	go func() {
+		if err := wsrv.Serve(); err != nil {
+			log.Printf("web server stopped: %v", err)
+		}
+	}()
 
 	feedType := "random"
-	if savedState.Feed.Type != "" {
-		feedType = savedState.Feed.Type
+	if st.Feed.Type != "" {
+		feedType = st.Feed.Type
 	}
-
-	bot := tg.NewBot(config.TgToken, engine, tradeLog, store, config.Symbol, config.TF, feedType)
 
 	startFeed := func(ftype string) context.CancelFunc {
 		ctxFeed, cancelFeed := context.WithCancel(ctx)
 		switch ftype {
 		case "rest":
-			interval, err := time.ParseDuration(config.RestInterval)
+			interval, err := time.ParseDuration(c.RestInterval)
 			if err != nil || interval <= 0 {
 				interval = 3 * time.Second
 			}
-			feed := data.NewRestFeed(config.Symbol, config.TF, interval)
+			feed := data.NewRestFeed(c.Symbol, c.TF, interval)
 			go func() {
 				for k := range feed.Candles {
-					if err := engine.OnCandle(k.Symbol, k.TF, k); err != nil {
+					if line, err := json.Marshal(map[string]any{
+						"type": "candle",
+						"data": map[string]any{
+							"t": k.Ts.UnixMilli(),
+							"o": k.Open,
+							"h": k.High,
+							"l": k.Low,
+							"c": k.Close,
+						},
+					}); err == nil {
+						wsrv.PublishJSON(string(line))
+					} else {
+						log.Printf("candle marshal: %v", err)
+					}
+					if err := eng.OnCandle(k.Symbol, k.TF, k); err != nil {
 						log.Printf("engine OnCandle: %v", err)
 					}
 				}
 			}()
 			feed.Start(ctxFeed)
 		default:
-			feed := data.NewRandomFeed(config.Symbol, config.TF, time.Now().Add(-time.Hour), 64000, 0.002)
+			feed := data.NewRandomFeed(c.Symbol, c.TF, time.Now().Add(-time.Hour), 64000, 0.002)
 			go func() {
 				for k := range feed.Candles {
-					if err := engine.OnCandle(k.Symbol, k.TF, k); err != nil {
+					if line, err := json.Marshal(map[string]any{
+						"type": "candle",
+						"data": map[string]any{
+							"t": k.Ts.UnixMilli(),
+							"o": k.Open,
+							"h": k.High,
+							"l": k.Low,
+							"c": k.Close,
+						},
+					}); err == nil {
+						wsrv.PublishJSON(string(line))
+					} else {
+						log.Printf("candle marshal: %v", err)
+					}
+					if err := eng.OnCandle(k.Symbol, k.TF, k); err != nil {
 						log.Printf("engine OnCandle: %v", err)
 					}
 				}
@@ -117,6 +145,8 @@ func main() {
 
 	var feedMu sync.Mutex
 	cancelFeed := startFeed(feedType)
+
+	bot := tg.NewBot(c.TgToken, eng, tl, store, c.Symbol, c.TF, feedType)
 
 	go func() {
 		if err := bot.Run(ctx, func(newFeed string) {
@@ -141,5 +171,6 @@ func main() {
 		cancelFeed()
 	}
 	feedMu.Unlock()
+	wsrv.Stop()
 	time.Sleep(300 * time.Millisecond)
 }

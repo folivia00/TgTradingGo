@@ -5,17 +5,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>TradeBot — Web App</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
 <style>
   html,body{margin:0;padding:0;height:100%;font-family:Inter,system-ui,sans-serif;background:#0b0f17;color:#e6edf3}
-  .wrap{max-width:1000px;margin:0 auto;padding:16px}
+  .wrap{max-width:1100px;margin:0 auto;padding:16px}
   .card{background:#111826;border:1px solid #1f2837;border-radius:12px;padding:16px;margin-bottom:12px}
   .row{display:flex;gap:12px;align-items:center}
   .muted{opacity:.7}
   .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace}
   button{background:#1f6feb;border:0;border-radius:8px;padding:10px 14px;color:#fff;cursor:pointer}
+  #chart{height:360px}
 </style>
 </head>
 <body>
@@ -26,8 +28,26 @@
           <div style="font-weight:600;font-size:18px">Telegram Web App connected</div>
           <div id="who" class="muted">…</div>
         </div>
-        <button id="ping">Ping API</button>
+        <div class="row">
+          <select id="symbol">
+            <option>BTCUSDT</option>
+            <option>ETHUSDT</option>
+          </select>
+          <select id="tf">
+            <option>1m</option>
+            <option>5m</option>
+            <option>15m</option>
+            <option>1h</option>
+          </select>
+          <button id="load">Load history</button>
+          <button id="ping">Ping API</button>
+        </div>
       </div>
+    </div>
+
+    <div class="card">
+      <div style="font-weight:600;margin-bottom:8px">Chart</div>
+      <div id="chart"></div>
     </div>
 
     <div class="card">
@@ -38,4 +58,3 @@
 <script src="/ui/app.js"></script>
 </body>
 </html>
-
