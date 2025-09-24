@@ -67,6 +67,17 @@ func (b *Bot) Run(ctx context.Context, onSwitchFeed func(newFeed string)) error 
 				text := strings.TrimSpace(up.Message.Text)
 				switch {
 				case strings.HasPrefix(text, "/start"), strings.HasPrefix(text, "/help"):
+					// Кнопка Web App
+					btn := map[string]any{"text": "📊 Открыть терминал", "web_app": map[string]string{"url": "http://localhost:8080/"}}
+					kb := map[string]any{"inline_keyboard": [][]any{{btn}}}
+					rm, _ := json.Marshal(kb)
+					v := url.Values{}
+					v.Set("chat_id", strconv.FormatInt(chatID, 10))
+					v.Set("text", helpText()+"\n\nОткрой мини-терминал:")
+					v.Set("reply_markup", string(rm))
+					var out tgResp[tgMessage]
+					b.api("sendMessage", v, &out)
+					// также отправим обычный help без кнопки (на всякий)
 					b.send(chatID, helpText())
 				case strings.HasPrefix(text, "/status"):
 					b.send(chatID, b.status())
