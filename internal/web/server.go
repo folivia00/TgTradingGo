@@ -30,7 +30,7 @@ func NewServer(botToken, addr string, dev bool) *Server {
 
 func (s *Server) Serve() error {
 	mux := http.NewServeMux()
-	// статика (SPA)
+	// статика
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		b, err := uiFS.ReadFile("ui/index.html")
 		if err != nil {
@@ -49,19 +49,20 @@ func (s *Server) Serve() error {
 		w.Header().Set("Content-Type", "application/javascript")
 		_, _ = w.Write(b)
 	})
-	// ping
+	// API
 	mux.HandleFunc("/api/ping", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 	})
-	// history
 	mux.HandleFunc("/api/history", s.handleHistory)
+	mux.HandleFunc("/api/backtest", s.handleBacktest)
+	mux.HandleFunc("/api/export", s.handleExport)
+	mux.HandleFunc("/api/file", s.handleFile)
 	// SSE
 	mux.HandleFunc("/sse", func(w http.ResponseWriter, r *http.Request) {
 		s.hub.Subscribe(w, r)
 	})
 
-	// auth middleware (только для /api/* и /sse); для W1 включаем мягко
 	h := s.authMiddleware(mux)
 	log.Printf("web: listening on %s (dev=%v)", s.Addr, s.DevMode)
 	go s.mockTicker()
