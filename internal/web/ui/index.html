@@ -56,6 +56,48 @@
     <div id="chart"></div>
   </div>
 
+  <!-- Backtest -->
+  <div class="card">
+    <div style="font-weight:600;margin-bottom:8px">Backtest</div>
+    <div class="row" style="gap:12px; align-items:flex-end; flex-wrap:wrap">
+      <div>
+        <div class="muted" style="font-size:12px">From</div>
+        <input id="bt-from" type="datetime-local">
+      </div>
+      <div>
+        <div class="muted" style="font-size:12px">To</div>
+        <input id="bt-to" type="datetime-local">
+      </div>
+      <div>
+        <div class="muted" style="font-size:12px">Equity</div>
+        <input id="bt-eq" type="number" value="10000" step="100">
+      </div>
+      <div>
+        <div class="muted" style="font-size:12px">Lev</div>
+        <input id="bt-lev" type="number" value="1" step="1">
+      </div>
+      <div>
+        <div class="muted" style="font-size:12px">Strategy</div>
+        <select id="bt-strat">
+          <option value="ema_atr">EMA+ATR</option>
+          <option value="rsi">RSI</option>
+        </select>
+      </div>
+      <div style="min-width:280px">
+        <div class="muted" style="font-size:12px">Args (JSON)</div>
+        <input id="bt-args" value='{"fast":9,"slow":21,"atr":14,"R":1.5}'>
+      </div>
+      <div style="min-width:220px">
+        <div class="muted" style="font-size:12px">Fees (bps)</div>
+        <input id="bt-fees" value='{"makerBps":2,"takerBps":5}'>
+      </div>
+      <button class="btn" id="bt-run">Run backtest</button>
+      <a id="bt-zip" class="btn ghost" style="display:none" href="#" download>Download ZIP</a>
+      <div class="space"></div>
+      <div id="bt-summary" class="muted" style="font-family:ui-monospace,monospace"></div>
+    </div>
+  </div>
+
   <!-- Controls -->
   <div class="card">
     <div style="font-weight:600;margin-bottom:6px">Controls</div>
