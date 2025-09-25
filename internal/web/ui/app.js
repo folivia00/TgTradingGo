@@ -68,10 +68,32 @@
   document.querySelectorAll('.chip').forEach(el=>{ el.onclick=()=>{ document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active')); el.classList.add('active'); loadHistory(); }; });
   document.querySelector('.chip[data-tf="1m"]').classList.add('active');
 
-  async function switchFeed(feed){ await post('/api/ctrl/switch_feed', {feed}); msg(`Фид переключен: ${feed}`) }
+  async function switchFeed(feed){
+    await post('/api/ctrl/switch_feed', {feed});
+    await loadStatus();
+    await loadHistory();
+    msg(`Фид переключен: ${feed}`);
+  }
   function post(url, body){ return fetch(url,{ method:'POST', headers:{'Content-Type':'application/json', ...hdrs()}, body: body? JSON.stringify(body): null }).then(r=>{ if(!r.ok) throw new Error('request failed'); return r.json(); }) }
 
-  async function loadStatus(){ const r=await fetch('/api/status',{headers:hdrs()}); if(!r.ok) return; const s=await r.json(); $('#status').textContent = `mode=${s.mode} | ${s.symbol}/${s.tf} | feed=${s.feed} | equity=${(s.equity||0).toFixed(2)}` }
+  async function loadStatus(){
+    const r = await fetch('/api/status',{headers:hdrs()});
+    if(!r.ok) return;
+    const s = await r.json();
+    $('#status').textContent = `mode=${s.mode} | ${s.symbol}/${s.tf} | feed=${s.feed} | equity=${(s.equity||0).toFixed(2)}`;
+    const randomBtn = $('#feed-random');
+    const restBtn = $('#feed-rest');
+    if(s.feed==='random'){
+      randomBtn.classList.add('active');
+      restBtn.classList.remove('active');
+    }else if(s.feed==='rest'){
+      restBtn.classList.add('active');
+      randomBtn.classList.remove('active');
+    }else{
+      randomBtn.classList.remove('active');
+      restBtn.classList.remove('active');
+    }
+  }
 
   function msg(t){ const el=$('#aria-msg'); el.textContent=t; setTimeout(()=>el.textContent='Привет! Я помогу 🌸', 4000) }
 
