@@ -1,14 +1,25 @@
 package backtest
 
+import "strings"
+
 type pair struct{ G, L float64 }
 
 func ComputeMetrics(eq []Point, trades []Trade) Summary {
 	var sumPnL float64
 	var pf pair
+	wins := 0
+	closes := 0
 	for _, t := range trades {
+		if strings.ToUpper(t.Event) != "CLOSE" {
+			continue
+		}
+		closes++
 		sumPnL += t.PnL
 		if t.PnL >= 0 {
 			pf.G += t.PnL
+			if t.PnL > 0 {
+				wins++
+			}
 		} else {
 			pf.L += -t.PnL
 		}
@@ -28,18 +39,12 @@ func ComputeMetrics(eq []Point, trades []Trade) Summary {
 		}
 	}
 	wr := 0.0
-	if n := len(trades); n > 0 {
-		w := 0
-		for _, t := range trades {
-			if t.PnL > 0 {
-				w++
-			}
-		}
-		wr = float64(w) / float64(n)
+	if closes > 0 {
+		wr = float64(wins) / float64(closes)
 	}
 	pfv := 0.0
 	if pf.L > 0 {
 		pfv = pf.G / pf.L
 	}
-	return Summary{PNL: sumPnL, Trades: len(trades), WinRate: wr, ProfitFact: pfv, MaxDD: dd}
+	return Summary{PNL: sumPnL, Trades: closes, WinRate: wr, ProfitFact: pfv, MaxDD: dd}
 }

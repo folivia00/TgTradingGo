@@ -23,8 +23,9 @@ type btReq struct {
 	Leverage      float64             `json:"leverage"`
 	SlippageBps   float64             `json:"slippageBps"`
 	Fees          backtest.FeesConfig `json:"fees"`
+	Exchange      string              `json:"exchange"`
 	StrategyKind  string              `json:"strategy"`
-	StrategyArgs  map[string]float64  `json:"args"`
+	StrategyArgs  map[string]any      `json:"args"`
 }
 
 type btResp struct {
@@ -65,11 +66,14 @@ func (s *Server) handleBacktest(w http.ResponseWriter, r *http.Request) {
 	if req.StrategyKind == "" {
 		req.StrategyKind = "ema_atr"
 	}
+	if req.Exchange == "" {
+		req.Exchange = s.DefaultExchange
+	}
 
 	p := backtest.Params{
 		Symbol: req.Symbol, TF: req.TF, From: from, To: to,
 		InitialEquity: req.InitialEquity, Leverage: req.Leverage, SlippageBps: req.SlippageBps,
-		Fees: req.Fees, StrategyKind: req.StrategyKind, StrategyArgs: req.StrategyArgs,
+		Fees: req.Fees, Exchange: req.Exchange, StrategyKind: req.StrategyKind, StrategyArgs: req.StrategyArgs,
 	}
 	res, err := backtest.Run(p)
 	if err != nil {
@@ -91,7 +95,7 @@ func (s *Server) handleBacktest(w http.ResponseWriter, r *http.Request) {
 	{
 		rows := make([]export.TradeCSV, 0, len(res.Trades))
 		for _, t := range res.Trades {
-			rows = append(rows, export.TradeCSV{TS: t.TS.UnixMilli(), Side: t.Side, Qty: t.Qty, Price: t.Price, PnL: t.PnL, Note: t.Note})
+			rows = append(rows, export.TradeCSV{TS: t.TS.UnixMilli(), Event: t.Event, Side: t.Side, Qty: t.Qty, Price: t.Price, PnL: t.PnL, Fee: t.Fee, Note: t.Note})
 		}
 		if err := export.WriteTradesCSV(trcsv, rows); err != nil {
 			http.Error(w, "write trades", 500)

@@ -7,10 +7,11 @@ import (
 )
 
 type TradeCSV struct {
-	TS              int64
-	Side            string
-	Qty, Price, PnL float64
-	Note            string
+	TS                   int64
+	Event                string
+	Side                 string
+	Qty, Price, PnL, Fee float64
+	Note                 string
 }
 
 type EquityCSV struct {
@@ -26,9 +27,9 @@ func WriteTradesCSV(path string, rows []TradeCSV) error {
 	defer f.Close()
 	w := csv.NewWriter(f)
 	defer w.Flush()
-	w.Write([]string{"ts", "side", "qty", "price", "pnl", "note"})
+	w.Write([]string{"ts", "event", "side", "qty", "price", "pnl", "fee", "note"})
 	for _, r := range rows {
-		w.Write([]string{itoa64(r.TS), r.Side, ftoa(r.Qty), ftoa(r.Price), ftoa(r.PnL), r.Note})
+		w.Write([]string{itoa64(r.TS), r.Event, r.Side, ftoa(r.Qty), ftoa(r.Price), ftoa(r.PnL), ftoa(r.Fee), r.Note})
 	}
 	return nil
 }

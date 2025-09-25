@@ -423,7 +423,7 @@ func formatHistory(rows []core.TradeLogEntry) string {
 	}
 	var b strings.Builder
 	for _, r := range rows {
-		fmt.Fprintf(&b, "%s %s %s %s qty=%.4f px=%.2f pnl=%.2f %s\n", r.TS.Format("2006-01-02 15:04"), r.Symbol, r.TF, r.Event, r.Qty, r.Price, r.PnL, r.Comment)
+		fmt.Fprintf(&b, "%s %s %s %s qty=%.4f px=%.2f pnl=%.2f fee=%.4f %s\n", r.TS.Format("2006-01-02 15:04"), r.Symbol, r.TF, r.Event, r.Qty, r.Price, r.PnL, r.Fee, r.Comment)
 	}
 	return b.String()
 }

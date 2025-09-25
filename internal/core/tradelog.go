@@ -11,6 +11,7 @@ type TradeLogEntry struct {
 	Qty     float64
 	Price   float64
 	PnL     float64
+	Fee     float64
 	Comment string
 }
 
