@@ -18,9 +18,33 @@
   .space{flex:1}
   .chip{padding:6px 10px;border:1px solid var(--line);border-radius:999px;cursor:pointer}
   .chip.active{background:linear-gradient(90deg,var(--brand),var(--brand2));color:#0b0f17;border:0}
-  .btn{background:linear-gradient(90deg,var(--brand),var(--brand2));color:#0b0f17;border:0;border-radius:10px;padding:10px 12px;cursor:pointer;font-weight:600}
-  .btn.active{background:linear-gradient(90deg,var(--brand),var(--brand2));color:#0b0f17;border:0}
-  .btn.ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
+  /* Buttons: base = neutral; active/primary = gradient */
+  .btn{
+    background:transparent;
+    border:1px solid var(--line);
+    color:var(--text);
+    border-radius:10px;
+    padding:10px 12px;
+    cursor:pointer;
+    font-weight:600;
+    transition:.15s ease-in-out;
+  }
+  .btn:hover{ border-color:#2a3550 }
+  /* primary actions keep gradient explicitly */
+  .btn-primary{
+    background:linear-gradient(90deg,var(--brand),var(--brand2));
+    color:#0b0f17;
+    border:0;
+  }
+  /* toggled state (e.g., active feed) */
+  .btn.active{
+    background:linear-gradient(90deg,var(--brand),var(--brand2));
+    color:#0b0f17;
+    border:0;
+  }
+  .btn:disabled{ opacity:.6; cursor:not-allowed }
+  /* legacy alias; safe no-op override */
+  .btn.ghost{ /* same as .btn (neutral) */ }
   select,input{background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:8px}
   #chart{height:380px}
   .bubble{position:fixed;right:16px;bottom:16px;display:flex;gap:10px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:10px 12px;box-shadow:0 8px 24px rgba(0,0,0,.25)}
@@ -92,7 +116,7 @@
         <div class="muted" style="font-size:12px">Fees (bps)</div>
         <input id="bt-fees" value='{"makerBps":2,"takerBps":5}'>
       </div>
-      <button class="btn" id="bt-run">Run backtest</button>
+      <button class="btn btn-primary" id="bt-run">Run backtest</button>
       <a id="bt-zip" class="btn ghost" style="display:none" href="#" download>Download ZIP</a>
       <div class="space"></div>
       <div id="bt-summary" class="muted" style="font-family:ui-monospace,monospace"></div>
@@ -103,6 +127,7 @@
   <div class="card">
     <div style="font-weight:600;margin-bottom:6px">Controls</div>
     <div class="row">
+      <!-- feed-toggles are neutral by default; only .active is highlighted -->
       <button class="btn" id="feed-random">📡 Feed: Random</button>
       <button class="btn" id="feed-rest">📡 Feed: Rest</button>
       <button class="btn ghost" id="save-state">💾 Save</button>
