@@ -18,6 +18,9 @@ type Server struct {
 	Addr            string
 	DevMode         bool
 	DefaultExchange string
+	CurSymbol       string
+	CurTF           string
+	CurMode         string
 
 	hub         *sseHub
 	stop        chan struct{}
@@ -30,6 +33,7 @@ type Server struct {
 	OnLoadState  func() error
 	OnResetState func() error
 	GetStatus    func() any
+	OnSetSymbol  func(symbol, tf, mode string) error
 }
 
 func NewServer(botToken, addr string, dev bool) *Server {
@@ -77,6 +81,8 @@ func (s *Server) Serve() error {
 	mux.HandleFunc("/api/ctrl/save_state", s.handleSaveState)
 	mux.HandleFunc("/api/ctrl/load_state", s.handleLoadState)
 	mux.HandleFunc("/api/ctrl/reset_state", s.handleResetState)
+	mux.HandleFunc("/api/ctrl/set_symbol", s.handleSetSymbol)
+	mux.HandleFunc("/api/ctrl/sim_trade", s.handleSimTrade)
 	mux.HandleFunc("/api/status", s.handleStatus)
 	// SSE
 	mux.HandleFunc("/sse", func(w http.ResponseWriter, r *http.Request) { s.hub.Subscribe(w, r) })

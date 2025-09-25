@@ -102,6 +102,9 @@ func main() {
 		defEx = "spot"
 	}
 	wsrv.DefaultExchange = defEx
+	wsrv.CurSymbol = c.Symbol
+	wsrv.CurTF = c.TF
+	wsrv.CurMode = defEx
 
 	eng := core.NewEngine(core.EngineOpts{
 		Mode:       c.Mode,
@@ -126,15 +129,18 @@ func main() {
 	wsrv.GetStatus = func() any {
 		feedMu.Lock()
 		feed := curFeed
+		symbol := wsrv.CurSymbol
+		tf := wsrv.CurTF
+		mode := wsrv.CurMode
 		feedMu.Unlock()
 		snap := eng.Snapshot()
 		return map[string]any{
 			"mode":     c.Mode,
-			"symbol":   c.Symbol,
-			"tf":       c.TF,
+			"symbol":   symbol,
+			"tf":       tf,
 			"feed":     feed,
 			"equity":   snap.EquityUSD,
-			"exchange": wsrv.DefaultExchange,
+			"exchange": mode,
 			"strategy": wsrv.SelectedDSL(),
 		}
 	}
@@ -153,17 +159,21 @@ func main() {
 			if err != nil || interval <= 0 {
 				interval = 3 * time.Second
 			}
-			feed := data.NewRestFeed(c.Symbol, c.TF, interval)
+			symbol := wsrv.CurSymbol
+			tf := wsrv.CurTF
+			feed := data.NewRestFeed(symbol, tf, interval)
 			go func() {
 				for k := range feed.Candles {
 					if line, err := json.Marshal(map[string]any{
 						"type": "candle",
 						"data": map[string]any{
-							"t": k.Ts.UnixMilli(),
-							"o": k.Open,
-							"h": k.High,
-							"l": k.Low,
-							"c": k.Close,
+							"t":      k.Ts.UnixMilli(),
+							"o":      k.Open,
+							"h":      k.High,
+							"l":      k.Low,
+							"c":      k.Close,
+							"symbol": k.Symbol,
+							"tf":     k.TF,
 						},
 					}); err == nil {
 						wsrv.PublishJSON(string(line))
@@ -177,17 +187,21 @@ func main() {
 			}()
 			feed.Start(ctxFeed)
 		default:
-			feed := data.NewRandomFeed(c.Symbol, c.TF, time.Now().Add(-time.Hour), 64000, 0.002)
+			symbol := wsrv.CurSymbol
+			tf := wsrv.CurTF
+			feed := data.NewRandomFeed(symbol, tf, time.Now().Add(-time.Hour), 64000, 0.002)
 			go func() {
 				for k := range feed.Candles {
 					if line, err := json.Marshal(map[string]any{
 						"type": "candle",
 						"data": map[string]any{
-							"t": k.Ts.UnixMilli(),
-							"o": k.Open,
-							"h": k.High,
-							"l": k.Low,
-							"c": k.Close,
+							"t":      k.Ts.UnixMilli(),
+							"o":      k.Open,
+							"h":      k.High,
+							"l":      k.Low,
+							"c":      k.Close,
+							"symbol": k.Symbol,
+							"tf":     k.TF,
 						},
 					}); err == nil {
 						wsrv.PublishJSON(string(line))
@@ -202,6 +216,26 @@ func main() {
 			feed.Start(ctxFeed)
 		}
 		return cancelFeed
+	}
+
+	wsrv.OnSetSymbol = func(symbol, tf, mode string) error {
+		if symbol == "" || tf == "" {
+			return fmt.Errorf("bad args")
+		}
+		feedMu.Lock()
+		defer feedMu.Unlock()
+		if mode != "" {
+			wsrv.CurMode = strings.ToLower(mode)
+		}
+		wsrv.CurSymbol = symbol
+		wsrv.CurTF = tf
+		c.Symbol = symbol
+		c.TF = tf
+		if cancelFeed != nil {
+			cancelFeed()
+		}
+		cancelFeed = startFeed(curFeed)
+		return nil
 	}
 
 	changeFeed := func(newFeed string, persist bool) error {

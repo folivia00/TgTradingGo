@@ -5,30 +5,43 @@
 
   const chart = LightweightCharts.createChart($('#chart'), { layout:{background:{type:0}, textColor:'#e6edf3'}, grid:{vertLines:{color:'#1f2837'}, horzLines:{color:'#1f2837'}}, timeScale:{timeVisible:true, secondsVisible:false} });
   const series = chart.addCandlestickSeries();
-  let tradeMarkers = [];
+  series._markers = [];
   let modeInitialized = false;
+  const current = { symbol: $('#symbol')?.value || 'BTCUSDT', tf: '1m', mode: $('#bt-mode')?.value || 'spot' };
+
+  function setCurrent(sym, tf, mode){
+    if(sym) current.symbol = sym;
+    if(tf) current.tf = tf;
+    if(mode) current.mode = mode;
+  }
 
   async function loadHistory(){
     const sym = $('#symbol').value; const tf = activeTF();
-    const to = new Date(); const from = new Date(to.getTime() - 6*60*60*1000);
-    const mode = $('#bt-mode')?.value || 'spot';
+    const to = new Date(); const from = new Date(to.getTime() - 24*60*60*1000);
+    const mode = $('#bt-mode')?.value || current.mode || 'spot';
+    setCurrent(sym, tf, mode);
+    series.setData([]);
+    series._markers = [];
+    series.setMarkers([]);
     const url = `/api/history?symbol=${sym}&tf=${tf}&mode=${mode}&from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`;
     const res = await fetch(url, { headers: hdrs() }); const arr = await res.json();
     series.setData(arr.map(k=>({ time: Math.floor(k.t/1000), open:k.o, high:k.h, low:k.l, close:k.c })));
-    tradeMarkers = [];
-    series.setMarkers(tradeMarkers);
   }
 
   // SSE
   const out = $('#stream');
   const es = new EventSource('/sse');
-  es.onmessage = (e)=>{ try{ const j=JSON.parse(e.data); if(j.type==='candle'&&j.data){ series.update({ time: Math.floor(j.data.t/1000), open:j.data.o,high:j.data.h,low:j.data.l,close:j.data.c }); }
+  es.onmessage = (e)=>{ try{ const j=JSON.parse(e.data);
+    const ds = j?.data?.symbol; const dtf = j?.data?.tf;
+    const mine = (!ds || ds===current.symbol) && (!dtf || dtf===current.tf);
+    if(!mine) return;
+    if(j.type==='candle'&&j.data){ series.update({ time: Math.floor(j.data.t/1000), open:j.data.o,high:j.data.h,low:j.data.l,close:j.data.c }); }
     if(j.type==='trade'&&j.data){
       const d=j.data; const ts=Math.floor(new Date(d.ts).getTime()/1000);
       let marker=null;
-      if(d.side==='long'){
+      if(d.side==='long' || d.side==='buy'){
         marker={ time:ts, position:'belowBar', color:'#26a69a', shape:'arrowUp', text:(d.note||d.event||'BUY') };
-      } else if(d.side==='short'){
+      } else if(d.side==='short' || d.side==='sell'){
         marker={ time:ts, position:'aboveBar', color:'#ef5350', shape:'arrowDown', text:(d.note||d.event||'SELL') };
       } else {
         const color=(typeof d.pnl==='number' && d.pnl>=0)?'#42a5f5':'#ff7043';
@@ -36,8 +49,9 @@
         marker={ time:ts, position:'aboveBar', color, shape:'circle', text:txt };
       }
       if(marker){
-        tradeMarkers = [...tradeMarkers, marker].slice(-200);
-        series.setMarkers(tradeMarkers);
+        if(!Array.isArray(series._markers)){ series._markers = []; }
+        series._markers.push(marker);
+        series.setMarkers(series._markers.slice(-200));
       }
     }
     out.prepend((JSON.stringify(j,null,2)+"\n")); }catch{ out.prepend(e.data+"\n") } };
@@ -49,6 +63,12 @@
   $('#load-state').onclick  = ()=> post('/api/ctrl/load_state').then(loadStatus);
   $('#reset-state').onclick = ()=> post('/api/ctrl/reset_state').then(loadStatus);
   $('#load').onclick        = loadHistory;
+  $('#symbol').addEventListener('change', async ()=>{
+    const sym = $('#symbol').value; const tf = activeTF(); const mode = $('#bt-mode')?.value || current.mode;
+    try{ await post('/api/ctrl/set_symbol', {symbol:sym, tf, mode}); }catch(err){ console.error(err); }
+    await loadStatus();
+    await loadHistory();
+  });
   $('#ping').onclick        = async()=>{ const r=await fetch('/api/ping',{headers:hdrs()}); alert('Ping '+r.status) };
 
   // -------- Backtest UI ----------
@@ -89,7 +109,14 @@
   })();
 
   function activeTF(){ const el=document.querySelector('.chip.active'); return el? el.dataset.tf : '1m' }
-  document.querySelectorAll('.chip').forEach(el=>{ el.onclick=()=>{ document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active')); el.classList.add('active'); loadHistory(); }; });
+  document.querySelectorAll('.chip').forEach(el=>{ el.onclick=async()=>{
+    document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
+    el.classList.add('active');
+    const sym = $('#symbol').value; const tf = activeTF(); const mode = $('#bt-mode')?.value || current.mode;
+    try{ await post('/api/ctrl/set_symbol', {symbol:sym, tf, mode}); }catch(err){ console.error(err); }
+    await loadStatus();
+    await loadHistory();
+  }; });
   document.querySelector('.chip[data-tf="1m"]').classList.add('active');
 
   function updateFeedButtons(feed){
@@ -122,6 +149,8 @@
     if(!r.ok) return;
     const s = await r.json();
     $('#status').textContent = `mode=${s.mode} | ${s.symbol}/${s.tf} | feed=${s.feed} | exchange=${s.exchange||'spot'} | equity=${(s.equity||0).toFixed(2)}`;
+    if(s.symbol && s.tf){ setCurrent(s.symbol, s.tf); }
+    if(s.exchange){ current.mode = s.exchange; }
     if(!modeInitialized){
       const sel = $('#bt-mode'); if(sel && s.exchange){ sel.value = s.exchange; }
       modeInitialized = true;
@@ -133,7 +162,12 @@
 
   // init
   const modeSel = $('#bt-mode');
-  if(modeSel){ modeSel.addEventListener('change', ()=>{ loadHistory(); }); }
+  if(modeSel){ modeSel.addEventListener('change', async ()=>{
+    const sym = $('#symbol').value; const tf = activeTF(); const mode = modeSel.value || 'spot';
+    try{ await post('/api/ctrl/set_symbol', {symbol:sym, tf, mode}); }catch(err){ console.error(err); }
+    await loadStatus();
+    await loadHistory();
+  }); }
 
   loadHistory(); loadStatus();
 })();
