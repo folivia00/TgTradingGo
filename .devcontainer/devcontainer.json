@@ -1,0 +1,5 @@
+{
+  "containerEnv": {
+    "TG_TOKEN": "${localEnv:TG_TOKEN}"
+  }
+}

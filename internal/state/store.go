@@ -25,6 +25,13 @@ type State struct {
 	Feed     FeedState     `json:"feed"`
 }
 
+func Default() State {
+	return State{
+		Strategy: StrategyState{Type: "ema", I: []int{9, 21, 14}, F: []float64{1.5}},
+		Feed:     FeedState{Type: "random"},
+	}
+}
+
 type Store struct {
 	path string
 	mu   sync.Mutex
