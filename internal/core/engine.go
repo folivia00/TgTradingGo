@@ -14,6 +14,20 @@ type Engine struct {
 	notifyFunc func(string)
 	lastPx     float64
 	trades     TradeLogger
+	tradeHook  func(TradeEvent)
+}
+
+type TradeEvent struct {
+	TS      time.Time
+	Symbol  string
+	TF      string
+	Event   string
+	Side    Action
+	Qty     float64
+	Price   float64
+	PnL     float64
+	Fee     float64
+	Comment string
 }
 
 type EngineOpts struct {
@@ -22,6 +36,7 @@ type EngineOpts struct {
 	Risk       RiskModel
 	NotifyFunc func(string)
 	Trades     TradeLogger
+	TradeHook  func(TradeEvent)
 }
 
 type RiskModel interface {
@@ -32,7 +47,7 @@ func NewEngine(opts EngineOpts) *Engine {
 	if opts.NotifyFunc == nil {
 		opts.NotifyFunc = func(string) {}
 	}
-	return &Engine{mode: opts.Mode, eqUSD: opts.EqUSD, risk: opts.Risk, notifyFunc: opts.NotifyFunc, trades: opts.Trades}
+	return &Engine{mode: opts.Mode, eqUSD: opts.EqUSD, risk: opts.Risk, notifyFunc: opts.NotifyFunc, trades: opts.Trades, tradeHook: opts.TradeHook}
 }
 
 func (e *Engine) AttachStrategy(s Strategy) { e.strat = s }
@@ -109,9 +124,12 @@ func (e *Engine) OnCandle(sym, tf string, kl Kline) error {
 
 func (e *Engine) logTrade(ts time.Time, sym, tf, etype string, side Action, qty, price, pnl float64, comment string) {
 	if e.trades == nil {
+		if e.tradeHook != nil {
+			e.tradeHook(TradeEvent{TS: ts, Symbol: sym, TF: tf, Event: etype, Side: side, Qty: qty, Price: price, PnL: pnl, Comment: comment})
+		}
 		return
 	}
-	_ = e.trades.Append(TradeLogEntry{
+	entry := TradeLogEntry{
 		TS:      ts,
 		Symbol:  sym,
 		TF:      tf,
@@ -120,8 +138,13 @@ func (e *Engine) logTrade(ts time.Time, sym, tf, etype string, side Action, qty,
 		Qty:     qty,
 		Price:   price,
 		PnL:     pnl,
+		Fee:     0,
 		Comment: comment,
-	})
+	}
+	if e.tradeHook != nil {
+		e.tradeHook(TradeEvent{TS: ts, Symbol: sym, TF: tf, Event: etype, Side: side, Qty: qty, Price: price, PnL: pnl, Comment: comment})
+	}
+	_ = e.trades.Append(entry)
 }
 
 func ptrf(p *float64) string {

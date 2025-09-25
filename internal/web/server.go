@@ -7,18 +7,22 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 )
 
 //go:embed ui/*
 var uiFS embed.FS
 
 type Server struct {
-	BotToken string
-	Addr     string
-	DevMode  bool
+	BotToken        string
+	Addr            string
+	DevMode         bool
+	DefaultExchange string
 
-	hub  *sseHub
-	stop chan struct{}
+	hub         *sseHub
+	stop        chan struct{}
+	mu          sync.Mutex
+	selectedDSL string
 
 	// callbacks bound from main.go
 	OnSwitchFeed func(string) error
@@ -65,6 +69,9 @@ func (s *Server) Serve() error {
 	mux.HandleFunc("/api/backtest", s.handleBacktest)
 	mux.HandleFunc("/api/export", s.handleExport)
 	mux.HandleFunc("/api/file", s.handleFile)
+	mux.HandleFunc("/api/strategy/upload", s.handleStrategyUpload)
+	mux.HandleFunc("/api/strategy/list", s.handleStrategyList)
+	mux.HandleFunc("/api/strategy/select", s.handleStrategySelect)
 	// control
 	mux.HandleFunc("/api/ctrl/switch_feed", s.handleSwitchFeed)
 	mux.HandleFunc("/api/ctrl/save_state", s.handleSaveState)
@@ -104,6 +111,18 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 
 func (s *Server) PublishJSON(line string) { s.hub.Broadcast(line) }
 func (s *Server) Stop()                   { close(s.stop) }
+
+func (s *Server) setSelectedDSL(id string) {
+	s.mu.Lock()
+	s.selectedDSL = id
+	s.mu.Unlock()
+}
+
+func (s *Server) SelectedDSL() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.selectedDSL
+}
 
 func EnvDev() bool {
 	return strings.ToLower(os.Getenv("DEV_MODE")) == "true"

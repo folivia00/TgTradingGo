@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -21,6 +22,48 @@ import (
 	"tradebot/internal/tg"
 	"tradebot/internal/web"
 )
+
+func publishTrade(srv *web.Server, ev core.TradeEvent) {
+	if srv == nil {
+		return
+	}
+	payload := map[string]any{
+		"type": "trade",
+		"data": map[string]any{
+			"ts":     ev.TS.Format(time.RFC3339Nano),
+			"event":  ev.Event,
+			"side":   tradeSide(ev.Event, ev.Side),
+			"qty":    ev.Qty,
+			"price":  ev.Price,
+			"pnl":    ev.PnL,
+			"fee":    ev.Fee,
+			"note":   ev.Comment,
+			"symbol": ev.Symbol,
+			"tf":     ev.TF,
+		},
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("publish trade marshal: %v", err)
+		return
+	}
+	srv.PublishJSON(string(b))
+}
+
+func tradeSide(event string, side core.Action) string {
+	switch strings.ToUpper(event) {
+	case "CLOSE":
+		return "flat"
+	}
+	switch side {
+	case core.Buy:
+		return "long"
+	case core.Sell:
+		return "short"
+	default:
+		return "flat"
+	}
+}
 
 func main() {
 	c := cfg.Load()
@@ -54,21 +97,19 @@ func main() {
 	}
 
 	wsrv := web.NewServer(c.TgToken, web.EnvAddr(), web.EnvDev())
+	defEx := strings.ToLower(os.Getenv("EXCHANGE"))
+	if defEx == "" {
+		defEx = "spot"
+	}
+	wsrv.DefaultExchange = defEx
 
 	eng := core.NewEngine(core.EngineOpts{
-		Mode:  c.Mode,
-		EqUSD: c.PaperEquity,
-		Risk:  risk.Default(),
-		NotifyFunc: func(msg string) {
-			log.Printf("%s", msg)
-			if line, err := json.Marshal(map[string]any{
-				"type": "trade",
-				"data": map[string]any{"msg": msg},
-			}); err == nil {
-				wsrv.PublishJSON(string(line))
-			} else {
-				log.Printf("notify marshal: %v", err)
-			}
+		Mode:       c.Mode,
+		EqUSD:      c.PaperEquity,
+		Risk:       risk.Default(),
+		NotifyFunc: func(msg string) { log.Printf("%s", msg) },
+		TradeHook: func(ev core.TradeEvent) {
+			publishTrade(wsrv, ev)
 		},
 		Trades: tl,
 	})
@@ -88,11 +129,13 @@ func main() {
 		feedMu.Unlock()
 		snap := eng.Snapshot()
 		return map[string]any{
-			"mode":   c.Mode,
-			"symbol": c.Symbol,
-			"tf":     c.TF,
-			"feed":   feed,
-			"equity": snap.EquityUSD,
+			"mode":     c.Mode,
+			"symbol":   c.Symbol,
+			"tf":       c.TF,
+			"feed":     feed,
+			"equity":   snap.EquityUSD,
+			"exchange": wsrv.DefaultExchange,
+			"strategy": wsrv.SelectedDSL(),
 		}
 	}
 

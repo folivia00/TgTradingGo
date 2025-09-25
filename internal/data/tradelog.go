@@ -32,7 +32,7 @@ func NewTradeLog(path string) (*TradeLog, error) {
 			return nil, err
 		}
 		w := csv.NewWriter(f)
-		_ = w.Write([]string{"ts", "symbol", "tf", "event", "side", "qty", "price", "pnl", "comment"})
+		_ = w.Write([]string{"ts", "symbol", "tf", "event", "side", "qty", "price", "pnl", "fee", "comment"})
 		w.Flush()
 		_ = f.Close()
 	}
@@ -50,7 +50,7 @@ func (t *TradeLog) Append(r core.TradeLogEntry) error {
 	w := csv.NewWriter(f)
 	rec := []string{
 		r.TS.Format(time.RFC3339), r.Symbol, r.TF, r.Event, r.Side,
-		formatF(r.Qty), formatF(r.Price), formatF(r.PnL), r.Comment,
+		formatF(r.Qty), formatF(r.Price), formatF(r.PnL), formatF(r.Fee), r.Comment,
 	}
 	if err := w.Write(rec); err != nil {
 		return err
@@ -90,7 +90,17 @@ func parseRow(rec []string) core.TradeLogEntry {
 	qty, _ := strconv.ParseFloat(rec[5], 64)
 	price, _ := strconv.ParseFloat(rec[6], 64)
 	pnl, _ := strconv.ParseFloat(rec[7], 64)
-	return core.TradeLogEntry{TS: ts, Symbol: rec[1], TF: rec[2], Event: rec[3], Side: rec[4], Qty: qty, Price: price, PnL: pnl, Comment: rec[8]}
+	feeIdx := 8
+	fee := 0.0
+	if len(rec) > 8 {
+		fee, _ = strconv.ParseFloat(rec[8], 64)
+		feeIdx = 9
+	}
+	comment := ""
+	if len(rec) > feeIdx {
+		comment = rec[feeIdx]
+	}
+	return core.TradeLogEntry{TS: ts, Symbol: rec[1], TF: rec[2], Event: rec[3], Side: rec[4], Qty: qty, Price: price, PnL: pnl, Fee: fee, Comment: comment}
 }
 
 func formatF(f float64) string { return strconv.FormatFloat(f, 'f', 4, 64) }
